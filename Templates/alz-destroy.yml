@@ -1,0 +1,45 @@
+name: "AZL Cleanup / Destroy"
+
+trigger: none
+
+resources:
+  repositories:
+    - repository: Sources
+      type: git
+      name: Azure/Sources
+
+variables:
+  - group: VG-Sytac-ALZ
+
+stages:
+- stage: CLEANUP
+  jobs:
+  - job: ReviewCleanup
+    displayName: CLEANUP - Review cleanup before object removal
+    timeoutInMinutes: 2880 # task times out in 2 days and proceed with cleanup
+    pool: server
+    steps:
+    - task: ManualValidation@0
+      timeoutInMinutes: 2880 # task times out in 2 days and proceed with cleanup
+      inputs:
+        notifyUsers: $(ValidationNotifyUserOrGroup)
+        instructions: 'Validate deployment plan for significant modifications that might impact the environment'
+        onTimeout: 'resume'
+
+  - job: alz_cleanup
+    displayName: Perform Cleanup
+    dependsOn: ReviewCleanup
+    pool: 
+      vmImage: ubuntu-latest
+    steps:
+    - task: AzurePowerShell@5
+      displayName: AzurePowerShell Remove resources
+      name: alz_cleanup
+      inputs:
+        azureSubscription: $(ServiceConnection)
+        ScriptType: inlineScript
+        inline: |
+          echo '### Removing Resource Group $(ResourceGroupName)'
+          Remove-AzResourceGroup -ResourceGroupName $(ResourceGroupName) -Force -Verbose
+        azurePowerShellVersion: 'LatestVersion'
+
