@@ -9,7 +9,7 @@ resources:
       name: Azure/Sources
 
 variables:
-  - group: VG-Sytac-AKS
+  - group: VG-AKS
   
 stages:
 - stage: PLAN

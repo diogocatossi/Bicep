@@ -1,4 +1,4 @@
-name: "Sytac AZL Deploy via Bicep"
+name: "ALZ Deploy via Bicep"
 
 trigger: none
 
@@ -9,7 +9,7 @@ resources:
       name: Azure/Sources
 
 variables:
-  - group: VG-Sytac-ALZ
+  - group: VG-ALZ
   
 stages:
 - stage: PLAN
