@@ -10,10 +10,22 @@ This structure contains the modules and pipelines necessary to create landing zo
 
 # Structure
 The project is split into the following areas:
-- Modules - folder containing modules required by the pipelines to provision the resources. These modules are provided by Microsoft Azure Bicep team (https://github.com/Azure/ALZ-Bicep) and customizations are strongly discouraged, except the update of resource versions which are not updated as often and modules developed internaly:
-    * Keyvault
-    * AKS
 - CRML - Auxiliary modules used by the ALZ modules 
+- Modules - folder containing modules required by the pipelines to provision the resources. These modules are provided by Microsoft Azure Bicep team (https://github.com/Azure/ALZ-Bicep) and customizations are strongly discouraged, except the update of resource versions which are not updated as often and modules developed internally:
+    * AzureADDS
+    * AzureSQL
+    * Backup
+    * Keyvault
+    * LocalNetworkGateway
+    * Monitor
+    * NetworkSecurityGroup
+    * PolicySubscription
+    * PrivateEndpoint
+    * Security
+    * StorageAccount
+    * Subnets
+    * Virtual Machine
+    * VirtualNetworks (HubNetworking)
 - Templates - here all pipelines and Bicep orchestration files should be stored.
 
 # Templates
