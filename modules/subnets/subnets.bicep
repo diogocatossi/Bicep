@@ -10,6 +10,12 @@ param parSubnetName string
 @description('Array containing the subnet prefixes in CIDR format')
 param parSubnetCIDR string = ''
 
+@description('Array of service endpoints that should be added to the subnet')
+param parServiceEndpoints array = []
+
+@description('Network Security Group object for the subnet.')
+param parNetworkSecurityGroup object = {}
+
 @description('Set Parameter to true to Opt-out of deployment telemetry. Default: false')
 param parTelemetryOptOut bool = false
 
@@ -26,20 +32,19 @@ resource resSubnet 'Microsoft.Network/virtualNetworks/subnets@2022-01-01' = {
     parent    : resHubNetworking
     properties: {
       addressPrefix   : parSubnetCIDR
-      serviceEndpoints: [
-        {
+      serviceEndpoints: [for (endpointName, index) in parServiceEndpoints: {
           locations: [parLocation]
-          service  : 'Microsoft.Keyvault'
-        }
-      ] 
+          service  : endpointName
+      }]
+      networkSecurityGroup: parNetworkSecurityGroup
     }
 }
 
 // Optional Deployment for Customer Usage Attribution
 module modCustomerUsageAttribution '../../CRML/customerUsageAttribution/cuaIdResourceGroup.bicep' = if (!parTelemetryOptOut) {
-  name: 'pid-${varCuaid}-${uniqueString(resourceGroup().id)}'
+  name  : 'pid-${varCuaid}-${uniqueString(resourceGroup().id)}'
   params: {}
 }
 
 output subnetName string = resSubnet.name
-output subnetID string = resSubnet.id
+output subnetID string   = resSubnet.id

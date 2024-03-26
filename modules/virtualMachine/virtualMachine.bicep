@@ -14,6 +14,9 @@ param parVMSize string = 'Standard_B1ms'
 @description('Existing VNET that contains the domain controller')
 param parVirtualNetworkName string
 
+@description('Enable Accelerated Networking. DEFAULT: true')
+param parEnableAcceleratedNetworking bool = true
+
 @description('Existing subnet that contains the domain controller')
 param parSubnetName string
 
@@ -21,7 +24,7 @@ param parSubnetName string
 param parDomainToJoin string
 
 @description('Username of the account on the domain')
-param parDomainUsername string
+param parDomainUserPrincipalName string
 
 @description('Password of the account on the domain')
 @secure()
@@ -43,8 +46,14 @@ param parAdminPassword string
 @description('Storage account name for Boot Diagnostics. If not provided Boot Diagnostics will be disabled')
 param parBootDiagStorageAccountName string = ''
 
-@description('Log Analytics Workspace name where VM metrics should be stored. If no name is provived no diagnostic settings will be created.')
-param parLogAnalyticsWorkspaceId string = ''
+@description('Storage account RG for Boot Diagnostics.')
+param parBootDiagStorageAccountRG string = resourceGroup().name
+
+@description('Azure Monitor DCR name.')
+param parAzureMonitorDCRName string = ''
+
+@description('Azure Monitor DCR RG.')
+param parAzureMonitorDCRRG string = ''
 
 @allowed([
   true
@@ -53,13 +62,17 @@ param parLogAnalyticsWorkspaceId string = ''
 @description('Condition to deploy Public IP if required')
 param parDeployPublicIP bool
 
+@description('Public IP allocation method. DEFAULT: Dynamic')
+@allowed([
+  'Dynamic'
+  'Static'
+])
+param parPublicIPAllocationMethod string = 'Dynamic'
+
 @description('Unique public DNS prefix for the deployment. The fqdn will look something like \'<dnsname>.westus.cloudapp.azure.com\'. Up to 62 chars, digits or dashes, lowercase, should start with a letter: must conform to \'^[a-z][a-z0-9-]{1,61}[a-z0-9]$\'. DEFAULT: parVirtualMachineName')
 @minLength(1)
 @maxLength(62)
 param parDNSLabelPrefix string = toLower(parVirtualMachineName)
-
-      //@description('Number of NIC interfaces. DEFAULT: 1')
-      //param parNICNumber int = 1
 
 @description('The image publisher. DEFAULT: MicrosoftWindowsServer')
 param parImagePublisher string = 'MicrosoftWindowsServer'
@@ -67,11 +80,17 @@ param parImagePublisher string = 'MicrosoftWindowsServer'
 @description('Specifies the offer of the platform image or marketplace image used to create the virtual machine. DEFAULT: WindowsServer')
 param parImageOffer string = 'WindowsServer'
 
-@description('The image SKU. DEFAULT: 2022-Datacenter')
-param parSKU string = '2022-Datacenter'
+@description('The storage SKU. DEFAULT: Standard')
+param parSKU string = 'Standard'
 
 @description('List of data disks based on sizes in GB. Letters will be assigned sequentially and then would need to be reassigned as required after provisioning. Example: 500, 200, 1000')
 param parDataDisks array = []
+
+@description('Enable Hibernation on the VM. Requires Subscription to be allowed DEFAULT: false')
+param parHibernateEnabled bool = false
+
+@description('Enable UltraSSD on the VM. DEFAULT: false')
+param parUltraSSDEnabled bool = false
 
 @description('List of for VM deployment. E.g.: [1,2,3]. DEFAULT:[1]')
 param parZones array = [1]
@@ -99,25 +118,27 @@ var varPublicIPAddressName = 'PIP-${varNicName}'
 var varDiskLetters         = ['E','F','G','H','I','J','K','L','M','N','O','P','Q','R']
 
 
-resource publicIp 'Microsoft.Network/publicIPAddresses@2022-07-01' = if (parDeployPublicIP) {
+resource publicIp 'Microsoft.Network/publicIPAddresses@2023-06-01' = if (parDeployPublicIP) {
     name      : varPublicIPAddressName
     location  : parLocation
     properties: {
-      publicIPAllocationMethod: 'Dynamic'
+      publicIPAllocationMethod: parPublicIPAllocationMethod
       dnsSettings             : {
         domainNameLabel: parDNSLabelPrefix
       }
     }
 }
 
-resource resStorageAccount 'Microsoft.Storage/storageAccounts@2022-09-01' existing = if (!empty(parBootDiagStorageAccountName)) {
-    name: parBootDiagStorageAccountName
+resource resStorageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = if (!empty(parBootDiagStorageAccountName)) {
+  name: parBootDiagStorageAccountName  
+  scope: resourceGroup(parBootDiagStorageAccountRG)
 }
 
-resource resNIC 'Microsoft.Network/networkInterfaces@2022-07-01' = {
+resource resNIC 'Microsoft.Network/networkInterfaces@2023-06-01' = {
   name      : varNicName
   location  : parLocation
   properties: {
+    enableAcceleratedNetworking: parVMSize == 'Standard_B2ms' ? false : parEnableAcceleratedNetworking
     ipConfigurations: [
       {
         name      : 'ipconfig1'
@@ -133,10 +154,14 @@ resource resNIC 'Microsoft.Network/networkInterfaces@2022-07-01' = {
   }
 }
 
-resource resVirtualMachine 'Microsoft.Compute/virtualMachines@2022-11-01' = {
+resource resVirtualMachine 'Microsoft.Compute/virtualMachines@2023-09-01' = {
   name      : parVirtualMachineName
   location  : parLocation
   properties: {
+    additionalCapabilities: {
+      hibernationEnabled: parHibernateEnabled ? true : null
+      ultraSSDEnabled   : parUltraSSDEnabled  ? true : null
+    }
     hardwareProfile: {
       vmSize: parVMSize
     }
@@ -149,7 +174,7 @@ resource resVirtualMachine 'Microsoft.Compute/virtualMachines@2022-11-01' = {
         provisionVMAgent      : true
         enableAutomaticUpdates: true
         patchSettings         : {
-          patchMode     : 'AutomaticByOS'
+          patchMode     : contains(toLower(parSKU), 'hotpatch') ? 'AutomaticByPlatform' : 'AutomaticByOS'
           assessmentMode: 'ImageDefault'
         }
         enableVMAgentPlatformUpdates: false
@@ -206,7 +231,7 @@ resource resVirtualMachine 'Microsoft.Compute/virtualMachines@2022-11-01' = {
       settings               : {
         name   : parDomainToJoin
         ouPath : !empty(parOUPath) ? parOUPath : null
-        user   : '${parDomainUsername}@${parDomainToJoin}'
+        user   : parDomainUserPrincipalName
         restart: true
         options: parDomainJoinOptions
       }
@@ -215,19 +240,17 @@ resource resVirtualMachine 'Microsoft.Compute/virtualMachines@2022-11-01' = {
       }
     }
   }
-  resource resMMAAgent 'extensions' = {
-    name      : 'MMAAgent'
+
+  resource resAzureMonitorWindowsAgent 'extensions' = {
+    name      : 'AzureMonitorWindowsAgent'
     location  : parLocation
     properties: {
-      publisher              : 'Microsoft.EnterpriseCloud.Monitoring'
-      type                   : 'MicrosoftMonitoringAgent'
-      typeHandlerVersion     : '1.0'
       autoUpgradeMinorVersion: true
-      settings               : {
-        workspaceId: parLogAnalyticsWorkspaceId
-      }
+      publisher              : 'Microsoft.Azure.Monitor'
+      type                   : 'AzureMonitorWindowsAgent'
+      typeHandlerVersion     : '1.0'
+      enableAutomaticUpgrade: true
     }
-    tags      : parTags
   }
 
   resource resAntiMalware 'extensions' = {
@@ -257,28 +280,68 @@ resource resVirtualMachine 'Microsoft.Compute/virtualMachines@2022-11-01' = {
   }
 }
 
-resource resVirtualMachineSQL 'Microsoft.SqlVirtualMachine/sqlVirtualMachines@2022-08-01-preview' = if (contains(parImagePublisher,'MicrosoftSQLServer')) {
+resource resMicrosoftInsightsDCRAssociation 'Microsoft.Insights/dataCollectionRuleAssociations@2022-06-01' = {
+  name      : '${resVirtualMachine.name}-VMInsights-Dcr-Association'
+  scope     : resVirtualMachine
+  properties: {
+    dataCollectionRuleId: resourceId(parAzureMonitorDCRRG, 'Microsoft.Insights/dataCollectionRules', parAzureMonitorDCRName)
+    description         : 'VMInsights DCR Association'
+  }
+}
+
+resource resAzureMonitorDependencyAgent 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = {
+  name      : 'DependencyAgentWindows'
+  parent    : resVirtualMachine
+  location  : parLocation
+  properties: {
+    enableAutomaticUpgrade : true
+    autoUpgradeMinorVersion: true
+    publisher              : 'Microsoft.Azure.Monitoring.DependencyAgent'
+    type                   : 'DependencyAgentWindows'
+    typeHandlerVersion     : '9.10'
+    settings               : {
+      enableAMA : true
+    }
+  }
+  dependsOn: [resMicrosoftInsightsDCRAssociation]
+}
+
+
+resource resVirtualMachineSQL 'Microsoft.SqlVirtualMachine/sqlVirtualMachines@2023-01-01-preview' = if (contains(parImagePublisher,'MicrosoftSQLServer')) {
   name    : parVirtualMachineName
   location: parLocation
   properties: {
     virtualMachineResourceId    : resVirtualMachine.id
-    sqlManagement               : 'Full'
     sqlServerLicenseType        : 'PAYG'
-    storageConfigurationSettings: {
-      diskConfigurationType: 'NEW'
-      storageWorkloadType  : 'GENERAL'
-      sqlDataSettings      : {
-        luns           : range(0, length(parDataDisks))
-        defaultFilePath: '${varDiskLetters[0]}:\\SQLData'
-      }
-      sqlLogSettings: {
-        luns           : range(0, length(parDataDisks))
-        defaultFilePath: '${varDiskLetters[0]}:\\SQLLogs'
-      }
-      sqlTempDbSettings: {
-        defaultFilePath: '${varDiskLetters[0]}:\\SQLTempDB'
-      }
+    sqlManagement               : 'Full'
+    leastPrivilegeMode          : 'Enabled'
+    sqlImageSku                 : 'Standard'
+    enableAutomaticUpgrade      : true
+    autoPatchingSettings: {
+      enable                       : true
+      dayOfWeek                    : 'Saturday'
+      maintenanceWindowStartingHour: 22
+      maintenanceWindowDuration    : 120
     }
+    //TODO: Fix Storage Configuration
+    // storageConfigurationSettings: empty(parDataDisks) ? null : {
+    //   diskConfigurationType   : 'ADD'
+    //   storageWorkloadType     : 'GENERAL'
+    //   enableStorageConfigBlade: true
+    //   sqlSystemDbOnDataDisk   : false
+    //   sqlDataSettings         : {
+    //     luns           : [1]
+    //     defaultFilePath: '${varDiskLetters[1]}:\\SQLData'
+    //   }
+    //   sqlLogSettings: {
+    //     luns           : length(parDataDisks) > 1 ? [2] : [1]
+    //     defaultFilePath: length(parDataDisks) > 1 ? '${varDiskLetters[2]}:\\SQLLogs' : '${varDiskLetters[1]}:\\SQLLogs'
+    //   }
+    //   sqlTempDbSettings: {
+    //     luns           : length(parDataDisks) > 2 ? [3] : [1]
+    //     defaultFilePath: length(parDataDisks) > 2 ? '${varDiskLetters[3]}:\\SQLTempDB' : '${varDiskLetters[1]}:\\SQLTempDB'
+    //   }
+    // }
   }
 }
 
@@ -286,8 +349,9 @@ module modBackupProtectedItem '../backup/protectedItem.bicep' = if (!empty(parRe
     name: 'mod-protectedItem-${parRecoveryServicesVaultName}-${resVirtualMachine.name}' 
     scope: resourceGroup(parRecoveryServicesVaultRG)
     params: {
-      parRecoveryServicesVaultName: parRecoveryServicesVaultName
       parVirtualMachineName       : resVirtualMachine.name
+      parVirtualMachineRG         : resourceGroup().name
+      parRecoveryServicesVaultName: parRecoveryServicesVaultName
       parBackupPolicyName         : parBackupPolicyName
       parTags                     : parTags
     }
@@ -301,6 +365,6 @@ module modCustomerUsageAttribution '../../CRML/customerUsageAttribution/cuaIdSub
 }
 
 
-output VMid string   = resVirtualMachine.id
-output VMName string = resVirtualMachine.name
-
+output id string   = resVirtualMachine.id
+output name string = resVirtualMachine.name
+output ip string   = resNIC.properties.ipConfigurations[0].properties.privateIPAddress

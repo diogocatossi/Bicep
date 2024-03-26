@@ -58,6 +58,9 @@ param parAutomationAccountName string = 'alz-automation-account'
 @description('Automation Account region name. - Ensure the regions selected is a supported mapping as per: https://docs.microsoft.com/azure/automation/how-to/region-mappings - DEFAULT VALUE: resourceGroup().location')
 param parAutomationAccountLocation string = resourceGroup().location
 
+@description('The email address of whom should receive alerts from this workspace')
+param parActionGroupNotificationEmail string = ''
+
 @description('Tags you would like to be applied to all resources in this module')
 param parTags object = {}
 
@@ -67,16 +70,19 @@ param parAutomationAccountTags object = parTags
 @description('Tags you would like to be applied to Log Analytics Workspace. - DEFAULT VALUE: parTags value')
 param parLogAnalyticsWorkspaceTags object = parTags
 
+@description('Array containing Alert rules that should be created on this workspace. DEFAULT: none')
+param parAlertRules array = []
+
 @description('Set Parameter to true to Opt-out of deployment telemetry')
 param parTelemetryOptOut bool = false
 
-// Customer Usage Attribution Id
+  // Customer Usage Attribution Id
 var varCuaid = 'f8087c67-cc41-46b2-994d-66e4b661860d'
 
 resource resAutomationAccount 'Microsoft.Automation/automationAccounts@2022-08-08' = {
-  name: parAutomationAccountName
-  location: parAutomationAccountLocation
-  tags: parAutomationAccountTags
+  name      : parAutomationAccountName
+  location  : parAutomationAccountLocation
+  tags      : parAutomationAccountTags
   properties: {
     sku: {
       name: 'Basic'
@@ -88,9 +94,9 @@ resource resAutomationAccount 'Microsoft.Automation/automationAccounts@2022-08-0
 }
 
 resource resLogAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-  name: parLogAnalyticsWorkspaceName
-  location: parLogAnalyticsWorkspaceLocation
-  tags: parLogAnalyticsWorkspaceTags
+  name      : parLogAnalyticsWorkspaceName
+  location  : parLogAnalyticsWorkspaceLocation
+  tags      : parLogAnalyticsWorkspaceTags
   properties: {
     sku: {
       name: parLogAnalyticsWorkspaceSkuName
@@ -100,38 +106,94 @@ resource resLogAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022
 }
 
 resource resLogAnalyticsWorkspaceSolutions 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = [for solution in parLogAnalyticsWorkspaceSolutions: {
-  name: '${solution}(${resLogAnalyticsWorkspace.name})'
-  location: parLogAnalyticsWorkspaceLocation
-  tags: parTags
+  name      : '${solution}(${resLogAnalyticsWorkspace.name})'
+  location  : parLogAnalyticsWorkspaceLocation
+  tags      : parTags
   properties: {
     workspaceResourceId: resLogAnalyticsWorkspace.id
   }
   plan: {
-    name: '${solution}(${resLogAnalyticsWorkspace.name})'
-    product: 'OMSGallery/${solution}'
-    publisher: 'Microsoft'
+    name         : '${solution}(${resLogAnalyticsWorkspace.name})'
+    product      : 'OMSGallery/${solution}'
+    publisher    : 'Microsoft'
     promotionCode: ''
   }
 }]
 
 resource resLogAnalyticsLinkedServiceForAutomationAccount 'Microsoft.OperationalInsights/workspaces/linkedServices@2020-08-01' = {
-  name: '${resLogAnalyticsWorkspace.name}/Automation'
+  name      : '${resLogAnalyticsWorkspace.name}/Automation'
   properties: {
     resourceId: resAutomationAccount.id
   }
 }
 
+//############################################################## ACTION GROUPS ################################################################################
+resource resActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!empty(parActionGroupNotificationEmail))  {
+  name      : 'Admins'
+  location  : 'Global'
+  properties: {
+    groupShortName: 'Admins'
+    enabled       : true
+    emailReceivers: [
+      {
+        name                : 'ITOrgAdminsEmail'
+        emailAddress        : parActionGroupNotificationEmail
+        useCommonAlertSchema: false
+      }
+    ]
+    smsReceivers              : []
+    webhookReceivers          : []
+    eventHubReceivers         : []
+    itsmReceivers             : []
+    azureAppPushReceivers     : []
+    automationRunbookReceivers: []
+    voiceReceivers            : []
+    logicAppReceivers         : []
+    azureFunctionReceivers    : []
+    armRoleReceivers          : []
+  }
+}
+
+
+//############################################################## ALERT RULES ################################################################################
+module modAlertRules './LogAnalyticsAlertRules.bicep' =[for rule in parAlertRules: {
+  name: rule.parAlertRuleName
+  params: {
+    parLocation                 : parLogAnalyticsWorkspaceLocation
+    parLogAnalyticsWorkspaceId  : resLogAnalyticsWorkspace.id
+    parActionGroupID            : resActionGroup.id
+    parAlertRuleName            : rule.parAlertRuleName
+    parAlertRuleDisplayName     : rule.parAlertRuleDisplayName
+    parAlertRuleDescription     : rule.parAlertRuleDescription
+    parAlertRuleSeverity        : rule.parAlertRuleSeverity
+    parEvaluationFrequency      : rule.parEvaluationFrequencyMin
+    parWindowSize               : rule.parWindowSize
+    parAgregation               : rule.parAgregation
+    parMetricMeasureColumn      : rule.parMetricMeasureColumn
+    parDimensions               : rule.parDimensions
+    parQuery                    : rule.parQuery
+    parOperator                 : rule.parOperator
+    parThreshold                : rule.parThreshold
+    parNumberOfEvaluationPeriods: rule.parNumberOfEvaluationPeriods
+    parMinFailingPeriodsToAlert : rule.parMinFailingPeriodsToAlert
+    parMuteactionsDurationHours : rule.parMuteactionsDurationHours
+    parTags                     : parTags
+  }
+}] 
+
+
 // Optional Deployment for Customer Usage Attribution
 module modCustomerUsageAttribution '../../CRML/customerUsageAttribution/cuaIdResourceGroup.bicep' = if (!parTelemetryOptOut) {
-  #disable-next-line no-loc-expr-outside-params //Only to ensure telemetry data is stored in same location as deployment. See https://github.com/Azure/ALZ-Bicep/wiki/FAQ#why-are-some-linter-rules-disabled-via-the-disable-next-line-bicep-function for more information
-  name: 'pid-${varCuaid}-${uniqueString(resourceGroup().location)}'
+  #disable-next-line no-loc-expr-outside-params  //Only to ensure telemetry data is stored in same location as deployment. See https://github.com/Azure/ALZ-Bicep/wiki/FAQ#why-are-some-linter-rules-disabled-via-the-disable-next-line-bicep-function for more information
+  name  : 'pid-${varCuaid}-${uniqueString(resourceGroup().location)}'
   params: {}
 }
 
+
 output outLogAnalyticsWorkspaceName string = resLogAnalyticsWorkspace.name
-output outLogAnalyticsWorkspaceId string = resLogAnalyticsWorkspace.id
-output outLogAnalyticsCustomerId string = resLogAnalyticsWorkspace.properties.customerId
-output outLogAnalyticsSolutions array = parLogAnalyticsWorkspaceSolutions
+output outLogAnalyticsWorkspaceId string   = resLogAnalyticsWorkspace.id
+output outLogAnalyticsCustomerId string    = resLogAnalyticsWorkspace.properties.customerId
+output outLogAnalyticsSolutions array      = parLogAnalyticsWorkspaceSolutions
 
 output outAutomationAccountName string = resAutomationAccount.name
-output outAutomationAccountId string = resAutomationAccount.id
+output outAutomationAccountId string   = resAutomationAccount.id

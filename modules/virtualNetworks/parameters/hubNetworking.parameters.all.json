@@ -1,0 +1,140 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "parLocation": {
+      "value": "eastus"
+    },
+    "parCompanyPrefix": {
+      "value": "alz"
+    },
+    "parHubNetworkName": {
+      "value": "alz-hub-eastus"
+    },
+    "parHubNetworkAddressPrefix": {
+      "value": "10.20.0.0/16"
+    },
+    "parSubnets": {
+      "value": [
+        {
+          "name": "AzureBastionSubnet",
+          "ipAddressRange": "10.20.0.0/24"
+        },
+        {
+          "name": "GatewaySubnet",
+          "ipAddressRange": "10.20.254.0/24"
+        },
+        {
+          "name": "AzureFirewallSubnet",
+          "ipAddressRange": "10.20.255.0/24"
+        }
+      ]
+    },
+    "parDnsServerIps": {
+      "value": []
+    },
+    "parPublicIpSku": {
+      "value": "Standard"
+    },
+    "parAzBastionEnabled": {
+      "value": true
+    },
+    "parAzBastionName": {
+      "value": "alz-bastion"
+    },
+    "parAzBastionSku": {
+      "value": "Standard"
+    },
+    "parAzBastionNsgName": {
+      "value": "nsg-AzureBastionSubnet"
+    },
+    "parDdosEnabled": {
+      "value": true
+    },
+    "parDdosPlanName": {
+      "value": "alz-ddos-plan"
+    },
+    "parAzFirewallEnabled": {
+      "value": true
+    },
+    "parAzFirewallName": {
+      "value": "alz-azfw-eastus"
+    },
+    "parAzFirewallPoliciesName": {
+      "value": "alz-azfwpolicy-eastus"
+    },
+    "parAzFirewallTier": {
+      "value": "Standard"
+    },
+    "parAzFirewallAvailabilityZones": {
+      "value": []
+    },
+    "parAzFirewallDnsProxyEnabled": {
+      "value": true
+    },
+    "parHubRouteTableName": {
+      "value": "alz-hub-routetable"
+    },
+    "parDisableBgpRoutePropagation": {
+      "value": false
+    },
+    "parPrivateDnsZonesEnabled": {
+      "value": true
+    },
+    "parPrivateDnsZones": {
+      "value": [
+        
+      ]
+    },
+    "parVpnGatewayConfig": {
+      "value": {
+        "name": "alz-Vpn-Gateway",
+        "gatewayType": "Vpn",
+        "sku": "VpnGw1",
+        "vpnType": "RouteBased",
+        "generation": "Generation1",
+        "enableBgp": false,
+        "activeActive": false,
+        "enableBgpRouteTranslationForNat": false,
+        "enableDnsForwarding": false,
+        "asn": "65515",
+        "bgpPeeringAddress": "",
+        "bgpsettings": {
+          "asn": "65515",
+          "bgpPeeringAddress": "",
+          "peerWeight": "5"
+        }
+      }
+    },
+    "parExpressRouteGatewayConfig": {
+      "value": {
+        "name": "alz-ExpressRoute-Gateway",
+        "gatewayType": "ExpressRoute",
+        "sku": "ErGw1AZ",
+        "vpnType": "RouteBased",
+        "generation": "None",
+        "enableBgp": false,
+        "activeActive": false,
+        "enableBgpRouteTranslationForNat": false,
+        "enableDnsForwarding": false,
+        "asn": "65515",
+        "bgpPeeringAddress": "",
+        "bgpsettings": {
+          "asn": "65515",
+          "bgpPeeringAddress": "",
+          "peerWeight": "5"
+        }
+      }
+    },
+    "parTags": {
+      "value": [{
+        "Environment": "POC"
+      },{
+        "Tier": "Backend"
+      }]
+    },
+    "parTelemetryOptOut": {
+      "value": false
+    }
+  }
+}
